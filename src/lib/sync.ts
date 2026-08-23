@@ -101,7 +101,11 @@ async function ensureLedgerId(supabase: SupabaseClient): Promise<string> {
 
   const { data, error } = await supabase
     .from("ledger_members")
-    .select("ledger_id")
+    .select("ledger_id, ledgers!inner(created_at)")
+    // Oldest first, and explicitly ordered: .limit(1) with no order lets
+    // Postgres return whichever row it likes, so a user in two ledgers would
+    // land in a different one on different days.
+    .order("ledgers(created_at)", { ascending: true })
     .limit(1)
     .single();
 

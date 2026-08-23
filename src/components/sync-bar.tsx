@@ -14,6 +14,7 @@ export function SyncBar() {
   const [online, setOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [unconfigured, setUnconfigured] = useState(false);
 
   const pending = useLiveQuery(
     () => db.transactions.where("dirty").equals(1).count(),
@@ -38,6 +39,7 @@ export function SyncBar() {
       setSyncing(true);
       const result = await sync();
       setLocked(!result.ok && result.locked === true);
+      setUnconfigured(!result.ok && result.unconfigured === true);
       setSyncing(false);
     }
 
@@ -67,7 +69,9 @@ export function SyncBar() {
   // Nothing to sync or sign out of before the user is authenticated.
   if (pathname.startsWith("/login")) return null;
 
-  const label = locked
+  const label = unconfigured
+    ? "ยังไม่ได้เลือกวิธีเก็บข้อมูล"
+    : locked
     ? "ล็อกอยู่"
     : !online
     ? `ออฟไลน์${pending > 0 ? ` · รอซิงก์ ${pending}` : ""}`
@@ -82,7 +86,7 @@ export function SyncBar() {
       <span className="flex items-center gap-1.5">
         <span
           className={`inline-block size-1.5 rounded-full ${
-            locked || !online
+            locked || unconfigured || !online
               ? "bg-amber-500"
               : pending > 0
                 ? "bg-blue-500"

@@ -19,6 +19,7 @@ const MIN_PASSPHRASE = 10;
 
 type Gate =
   | { state: "checking" }
+  | { state: "failed"; message: string }
   | { state: "open" }
   | { state: "choose"; ledgerId: string }
   | { state: "setup"; ledgerId: string }
@@ -33,7 +34,7 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [gate, setGate] = useState<Gate>({ state: "checking" });
 
-  const evaluate = useCallback(async () => {
+  const decide = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase.auth.getUser();
 
@@ -44,7 +45,8 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
     if (!ledgerId) {
       const { data: member } = await supabase
         .from("ledger_members")
-        .select("ledger_id")
+        .select("ledger_id, ledgers!inner(created_at)")
+        .order("ledgers(created_at)", { ascending: true })
         .limit(1)
         .single();
       if (!member) return setGate({ state: "open" });
@@ -64,6 +66,20 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
     setGate({ state: wrapped ? "unlock" : "setup", ledgerId });
   }, []);
 
+  const evaluate = useCallback(async () => {
+    try {
+      await decide();
+    } catch (err) {
+      // A throw in here used to leave the gate on "checking" forever with no
+      // message — which is exactly how a ledger that had silently stopped
+      // syncing came to look like an empty ledger.
+      setGate({
+        state: "failed",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }, [decide]);
+
   useEffect(() => {
     void evaluate();
   }, [evaluate]);
@@ -72,6 +88,24 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
 
   if (gate.state === "checking") {
     return <p className="py-16 text-center text-sm text-neutral-500">กำลังตรวจสอบ...</p>;
+  }
+  if (gate.state === "failed") {
+    return (
+      <div className="flex flex-col gap-3 py-16 text-center">
+        <p className="text-sm text-red-600">เปิดข้อมูลไม่สำเร็จ</p>
+        <p className="text-xs text-neutral-500">{gate.message}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setGate({ state: "checking" });
+            void evaluate();
+          }}
+          className="mx-auto text-sm underline"
+        >
+          ลองอีกครั้ง
+        </button>
+      </div>
+    );
   }
   if (gate.state === "open") return <>{children}</>;
 
