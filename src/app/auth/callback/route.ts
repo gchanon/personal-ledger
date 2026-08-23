@@ -4,6 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
+
+  // An OAuth provider reports refusal on the redirect itself, before any
+  // exchange is possible.
+  if (searchParams.get("error")) {
+    return NextResponse.redirect(`${origin}/login?error=oauth`);
+  }
+
   const supabase = await createClient();
 
   // Email links carry token_hash; OAuth carries code.
