@@ -17,14 +17,16 @@ export type TransactionInput = {
   note: string | null;
 };
 
-export async function addTransaction(input: TransactionInput): Promise<void> {
+/** Returns the new row's id so a one-tap caller can offer undo. */
+export async function addTransaction(input: TransactionInput): Promise<string> {
   const ledgerId = await getMeta("ledger_id");
   if (!ledgerId) {
     throw new Error("ยังไม่ได้ซิงก์ครั้งแรก — ต่ออินเทอร์เน็ตแล้วเปิดแอพอีกครั้ง");
   }
 
+  const id = uuidv7(); // time-ordered, so offline rows still sort correctly on arrival
   await db.transactions.add({
-    id: uuidv7(), // time-ordered, so offline rows still sort correctly on arrival
+    id,
     ledger_id: ledgerId,
     currency: "THB",
     updated_at: new Date().toISOString(),
@@ -34,6 +36,7 @@ export async function addTransaction(input: TransactionInput): Promise<void> {
   });
 
   void sync();
+  return id;
 }
 
 export async function editTransaction(

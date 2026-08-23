@@ -32,6 +32,23 @@ export type LocalCategory = {
   icon: string | null;
   updated_at: string;
   deleted_at: string | null;
+  dirty: 0 | 1;
+};
+
+export type LocalPreset = {
+  id: string;
+  ledger_id: string;
+  label: string;
+  icon: string | null;
+  kind: Kind;
+  amount_minor: number;
+  category_id: string | null;
+  wallet_id: string | null;
+  note: string | null;
+  sort_order: number;
+  updated_at: string;
+  deleted_at: string | null;
+  dirty: 0 | 1;
 };
 
 export type LocalWallet = {
@@ -49,6 +66,7 @@ export const db = new Dexie("ledger") as Dexie & {
   transactions: EntityTable<LocalTransaction, "id">;
   categories: EntityTable<LocalCategory, "id">;
   wallets: EntityTable<LocalWallet, "id">;
+  presets: EntityTable<LocalPreset, "id">;
   meta: EntityTable<Meta, "key">;
 };
 
@@ -58,6 +76,25 @@ db.version(1).stores({
   wallets: "id",
   meta: "key",
 });
+
+// v2 makes categories editable offline, which means they need the same dirty
+// flag transactions have, and adds the presets store.
+db.version(2)
+  .stores({
+    transactions: "id, occurred_at, dirty, updated_at",
+    categories: "id, kind, dirty",
+    wallets: "id",
+    presets: "id, sort_order, dirty",
+    meta: "key",
+  })
+  .upgrade((tx) =>
+    tx
+      .table("categories")
+      .toCollection()
+      .modify((row) => {
+        row.dirty = 0;
+      }),
+  );
 
 export async function getMeta(key: string): Promise<string | undefined> {
   return (await db.meta.get(key))?.value;
@@ -69,12 +106,21 @@ export async function setMeta(key: string, value: string): Promise<void> {
 
 /** Drops every cached row. Used on sign-out so the next user can't read them. */
 export async function clearLocalData(): Promise<void> {
-  await db.transaction("rw", db.transactions, db.categories, db.wallets, db.meta, async () => {
-    await Promise.all([
-      db.transactions.clear(),
-      db.categories.clear(),
-      db.wallets.clear(),
-      db.meta.clear(),
-    ]);
-  });
+  await db.transaction(
+    "rw",
+    db.transactions,
+    db.categories,
+    db.wallets,
+    db.presets,
+    db.meta,
+    async () => {
+      await Promise.all([
+        db.transactions.clear(),
+        db.categories.clear(),
+        db.wallets.clear(),
+        db.presets.clear(),
+        db.meta.clear(),
+      ]);
+    },
+  );
 }

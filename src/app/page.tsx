@@ -3,6 +3,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { QuickAdd } from "@/components/quick-add";
 import { TransactionForm } from "@/components/transaction-form";
 import { db } from "@/lib/db";
 import { formatMinor } from "@/lib/money";
@@ -13,6 +14,7 @@ export default function AddPage() {
       <Suspense fallback={<div className="h-12" />}>
         <TodayHeader />
       </Suspense>
+      <QuickAdd />
       <Suspense fallback={null}>
         <PrefilledForm />
       </Suspense>

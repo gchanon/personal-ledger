@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { EntityTable } from "dexie";
 import {
   db,
   getMeta,
   setMeta,
   type LocalCategory,
+  type LocalPreset,
   type LocalTransaction,
   type LocalWallet,
 } from "@/lib/db";
@@ -69,24 +71,43 @@ async function ensureLedgerId(supabase: SupabaseClient): Promise<void> {
   await setMeta("ledger_id", data.ledger_id);
 }
 
+type Dirty = Syncable & { dirty: 0 | 1 };
+
+/** Everything the user can edit locally. Wallets are still server-managed. */
 async function push(supabase: SupabaseClient): Promise<number> {
-  const dirty = await db.transactions.where("dirty").equals(1).toArray();
+  let pushed = 0;
+  // Categories before transactions: a transaction can point at a category that
+  // only exists locally, and the foreign key would reject it the other way round.
+  pushed += await pushTable(supabase, "categories", db.categories);
+  pushed += await pushTable(supabase, "transactions", db.transactions);
+  pushed += await pushTable(supabase, "presets", db.presets);
+  return pushed;
+}
+
+async function pushTable<T extends Dirty>(
+  supabase: SupabaseClient,
+  table: string,
+  store: EntityTable<T, "id">,
+): Promise<number> {
+  const dirty = await store.where("dirty").equals(1).toArray();
   if (dirty.length === 0) return 0;
 
-  const { error } = await supabase.from("transactions").upsert(
-    dirty.map(({ dirty: _dirty, ...row }) => row),
-  );
+  // The dirty flag is local bookkeeping and has no column on the server.
+  const payload = dirty.map(({ dirty: _dirty, ...row }) => row) as Record<string, unknown>[];
+  const { error } = await supabase.from(table).upsert(payload);
   if (error) throw error;
 
   // Clear the flag only on rows the user hasn't touched again mid-flight —
   // matching on updated_at is what keeps a concurrent edit from being dropped.
-  await db.transaction("rw", db.transactions, async () => {
+  await db.transaction("rw", store, async () => {
     for (const row of dirty) {
-      await db.transactions
+      await store
         .where("id")
         .equals(row.id)
         .and((r) => r.updated_at === row.updated_at)
-        .modify({ dirty: 0 });
+        .modify((row) => {
+          row.dirty = 0;
+        });
     }
   });
 
@@ -94,13 +115,12 @@ async function push(supabase: SupabaseClient): Promise<number> {
 }
 
 async function pull(supabase: SupabaseClient): Promise<void> {
-  await pullTable<LocalCategory>(supabase, "categories", (rows) =>
-    db.categories.bulkPut(rows),
-  );
   await pullTable<LocalWallet>(supabase, "wallets", (rows) =>
     db.wallets.bulkPut(rows),
   );
-  await pullTransactions(supabase);
+  await pullDirtyAware<LocalCategory>(supabase, "categories", db.categories);
+  await pullDirtyAware<LocalTransaction>(supabase, "transactions", db.transactions);
+  await pullDirtyAware<LocalPreset>(supabase, "presets", db.presets);
 }
 
 type Syncable = { id: string; updated_at: string };
@@ -117,24 +137,24 @@ async function pullTable<T extends Syncable>(
   await advanceCursor(table, rows);
 }
 
-async function pullTransactions(supabase: SupabaseClient): Promise<void> {
-  const rows = await fetchSince<Omit<LocalTransaction, "dirty">>(
-    supabase,
-    "transactions",
-  );
+/** Skips rows we have not pushed yet — those are newer than anything on the server. */
+async function pullDirtyAware<T extends Dirty>(
+  supabase: SupabaseClient,
+  table: string,
+  store: EntityTable<T, "id">,
+): Promise<void> {
+  const rows = await fetchSince<Omit<T, "dirty">>(supabase, table);
   if (rows.length === 0) return;
 
-  const dirtyIds = new Set(
-    await db.transactions.where("dirty").equals(1).primaryKeys(),
+  const dirtyIds = new Set<string>(
+    (await store.where("dirty").equals(1).primaryKeys()) as string[],
   );
-
-  // A row we haven't pushed yet is newer than anything the server can send.
   const incoming = rows
     .filter((row) => !dirtyIds.has(row.id))
-    .map((row) => ({ ...row, dirty: 0 as const }));
+    .map((row) => ({ ...row, dirty: 0 as const }) as unknown as T);
 
-  if (incoming.length > 0) await db.transactions.bulkPut(incoming);
-  await advanceCursor("transactions", rows);
+  if (incoming.length > 0) await store.bulkPut(incoming);
+  await advanceCursor(table, rows);
 }
 
 async function fetchSince<T>(supabase: SupabaseClient, table: string): Promise<T[]> {
