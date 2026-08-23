@@ -3,6 +3,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { byThaiName } from "@/lib/analytics";
 import { db, type LocalTransaction } from "@/lib/db";
 import { parseToMinor } from "@/lib/money";
 import {
@@ -24,13 +25,15 @@ export function TransactionForm({ transaction, prefill = {} }: Props) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
 
+  // Dexie's sortBy compares code points, which puts "เดินทาง" last instead of
+  // under ด — Thai orders a leading vowel by the consonant that follows it.
   const categories = useLiveQuery(
-    () => db.categories.filter((c) => c.deleted_at === null).sortBy("name"),
+    async () => byThaiName(await db.categories.filter((c) => c.deleted_at === null).toArray()),
     [],
     [],
   );
   const wallets = useLiveQuery(
-    () => db.wallets.filter((w) => w.deleted_at === null).sortBy("name"),
+    async () => byThaiName(await db.wallets.filter((w) => w.deleted_at === null).toArray()),
     [],
     [],
   );

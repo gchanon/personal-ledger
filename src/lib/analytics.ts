@@ -157,3 +157,8 @@ export function dailySpend(rows: LocalTransaction[], key: MonthKey): DayCell[] {
 
   return cells;
 }
+
+/** Thai dictionary order. Plain string comparison sorts by code point instead. */
+export function byThaiName<T extends { name: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => a.name.localeCompare(b.name, "th"));
+}
