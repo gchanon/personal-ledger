@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EntityTable } from "dexie";
+import { open, seal } from "@/lib/envelope";
 import {
   db,
   getMeta,
@@ -10,10 +11,15 @@ import {
   type LocalWallet,
 } from "@/lib/db";
 import { createClient } from "@/lib/supabase/client";
+import { currentKey } from "@/lib/vault";
 
 /**
- * Push-then-pull delta sync against Supabase. RLS scopes every query to the
- * signed-in user, so the browser talks to Postgres directly — no API layer.
+ * Push-then-pull delta sync against Supabase, with every content field encrypted
+ * before it leaves the device.
+ *
+ * The server is dumb storage: it filters on updated_at and nothing else, which is
+ * what makes end-to-end encryption free here — no aggregate, join or sort depends
+ * on a value the server can no longer read.
  *
  * Conflict resolution is last-write-wins per row. Pushing first means a local
  * edit beats a concurrent remote one, which is the behaviour you want when the
@@ -27,7 +33,9 @@ const CURSOR_REWIND_MS = 2000;
 
 let inFlight: Promise<SyncResult> | null = null;
 
-export type SyncResult = { ok: true; pushed: number } | { ok: false; error: string };
+export type SyncResult =
+  | { ok: true; pushed: number; undecryptable: number }
+  | { ok: false; error: string; locked?: boolean };
 
 export function sync(): Promise<SyncResult> {
   // Collapse overlapping triggers (focus + online + a fresh write) into one run.
@@ -46,18 +54,22 @@ async function run(): Promise<SyncResult> {
   const { data } = await supabase.auth.getUser();
   if (!data.user) return { ok: false, error: "not signed in" };
 
+  // Without the key there is nothing safe to do: pushing would write plaintext
+  // and pulling would store ciphertext the app can't read.
+  const dek = await currentKey();
+  if (!dek) return { ok: false, error: "locked", locked: true };
+
   try {
     await ensureLedgerId(supabase);
-    const pushed = await push(supabase);
-    await pull(supabase);
+    const pushed = await push(supabase, dek);
+    const undecryptable = await pull(supabase, dek);
     await setMeta("last_synced_at", new Date().toISOString());
-    return { ok: true, pushed };
+    return { ok: true, pushed, undecryptable };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-/** New transactions need a ledger_id before they can be written, even offline. */
 async function ensureLedgerId(supabase: SupabaseClient): Promise<void> {
   if (await getMeta("ledger_id")) return;
 
@@ -71,29 +83,34 @@ async function ensureLedgerId(supabase: SupabaseClient): Promise<void> {
   await setMeta("ledger_id", data.ledger_id);
 }
 
-type Dirty = Syncable & { dirty: 0 | 1 };
+type Dirty = { id: string; updated_at: string; dirty: 0 | 1 };
 
-/** Everything the user can edit locally. Wallets are still server-managed. */
-async function push(supabase: SupabaseClient): Promise<number> {
+// ─── Push ────────────────────────────────────────────────────────────────────
+
+async function push(supabase: SupabaseClient, dek: CryptoKey): Promise<number> {
   let pushed = 0;
-  // Categories before transactions: a transaction can point at a category that
-  // only exists locally, and the foreign key would reject it the other way round.
-  pushed += await pushTable(supabase, "categories", db.categories);
-  pushed += await pushTable(supabase, "transactions", db.transactions);
-  pushed += await pushTable(supabase, "presets", db.presets);
+  // Categories and wallets before transactions: a transaction can reference one
+  // that exists only on this device, and the foreign key rejects that order.
+  pushed += await pushTable(supabase, dek, "categories", db.categories);
+  pushed += await pushTable(supabase, dek, "wallets", db.wallets);
+  pushed += await pushTable(supabase, dek, "transactions", db.transactions);
+  pushed += await pushTable(supabase, dek, "presets", db.presets);
   return pushed;
 }
 
 async function pushTable<T extends Dirty>(
   supabase: SupabaseClient,
+  dek: CryptoKey,
   table: string,
   store: EntityTable<T, "id">,
 ): Promise<number> {
   const dirty = await store.where("dirty").equals(1).toArray();
   if (dirty.length === 0) return 0;
 
-  // The dirty flag is local bookkeeping and has no column on the server.
-  const payload = dirty.map(({ dirty: _dirty, ...row }) => row) as Record<string, unknown>[];
+  const payload = await Promise.all(
+    dirty.map(({ dirty: _dirty, ...row }) => seal(dek, table, row)),
+  );
+
   const { error } = await supabase.from(table).upsert(payload);
   if (error) throw error;
 
@@ -105,8 +122,8 @@ async function pushTable<T extends Dirty>(
         .where("id")
         .equals(row.id)
         .and((r) => r.updated_at === row.updated_at)
-        .modify((row) => {
-          row.dirty = 0;
+        .modify((r) => {
+          r.dirty = 0;
         });
     }
   });
@@ -114,50 +131,70 @@ async function pushTable<T extends Dirty>(
   return dirty.length;
 }
 
-async function pull(supabase: SupabaseClient): Promise<void> {
-  await pullTable<LocalWallet>(supabase, "wallets", (rows) =>
-    db.wallets.bulkPut(rows),
+// ─── Pull ────────────────────────────────────────────────────────────────────
+
+/** Returns how many rows could not be decrypted. */
+async function pull(supabase: SupabaseClient, dek: CryptoKey): Promise<number> {
+  let failed = 0;
+  failed += await pullTable<LocalCategory>(supabase, dek, "categories", db.categories);
+  failed += await pullTable<LocalWallet>(supabase, dek, "wallets", db.wallets);
+  failed += await pullTable<LocalTransaction>(
+    supabase,
+    dek,
+    "transactions",
+    db.transactions,
   );
-  await pullDirtyAware<LocalCategory>(supabase, "categories", db.categories);
-  await pullDirtyAware<LocalTransaction>(supabase, "transactions", db.transactions);
-  await pullDirtyAware<LocalPreset>(supabase, "presets", db.presets);
+  failed += await pullTable<LocalPreset>(supabase, dek, "presets", db.presets);
+  return failed;
 }
 
-type Syncable = { id: string; updated_at: string };
-
-async function pullTable<T extends Syncable>(
+async function pullTable<T extends Dirty>(
   supabase: SupabaseClient,
-  table: string,
-  write: (rows: T[]) => Promise<unknown>,
-): Promise<void> {
-  const rows = await fetchSince<T>(supabase, table);
-  if (rows.length === 0) return;
-
-  await write(rows);
-  await advanceCursor(table, rows);
-}
-
-/** Skips rows we have not pushed yet — those are newer than anything on the server. */
-async function pullDirtyAware<T extends Dirty>(
-  supabase: SupabaseClient,
+  dek: CryptoKey,
   table: string,
   store: EntityTable<T, "id">,
-): Promise<void> {
-  const rows = await fetchSince<Omit<T, "dirty">>(supabase, table);
-  if (rows.length === 0) return;
+): Promise<number> {
+  const rows = await fetchSince(supabase, table);
+  if (rows.length === 0) return 0;
 
   const dirtyIds = new Set<string>(
     (await store.where("dirty").equals(1).primaryKeys()) as string[],
   );
-  const incoming = rows
-    .filter((row) => !dirtyIds.has(row.id))
-    .map((row) => ({ ...row, dirty: 0 as const }) as unknown as T);
 
-  if (incoming.length > 0) await store.bulkPut(incoming);
-  await advanceCursor(table, rows);
+  const opened: T[] = [];
+  let newestHandled = EPOCH;
+  let failed = 0;
+
+  for (const row of rows) {
+    const updatedAt = row.updated_at as string;
+
+    // A row we haven't pushed yet is newer than anything the server can send.
+    if (dirtyIds.has(row.id as string)) {
+      newestHandled = maxIso(newestHandled, updatedAt);
+      continue;
+    }
+
+    try {
+      opened.push(await open<T>(dek, row));
+      newestHandled = maxIso(newestHandled, updatedAt);
+    } catch {
+      // Wrong key or damaged ciphertext. Leaving the cursor behind this row
+      // means a later fix re-reads it instead of losing it silently.
+      failed += 1;
+      break;
+    }
+  }
+
+  if (opened.length > 0) await store.bulkPut(opened);
+  if (newestHandled !== EPOCH) await advanceCursor(table, newestHandled);
+
+  return failed;
 }
 
-async function fetchSince<T>(supabase: SupabaseClient, table: string): Promise<T[]> {
+async function fetchSince(
+  supabase: SupabaseClient,
+  table: string,
+): Promise<Record<string, unknown>[]> {
   const since = (await getMeta(cursorKey(table))) ?? EPOCH;
   const { data, error } = await supabase
     .from(table)
@@ -166,16 +203,16 @@ async function fetchSince<T>(supabase: SupabaseClient, table: string): Promise<T
     .order("updated_at", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []) as T[];
+  return (data ?? []) as Record<string, unknown>[];
 }
 
-async function advanceCursor(table: string, rows: Syncable[]): Promise<void> {
-  const newest = rows.reduce(
-    (max, row) => (row.updated_at > max ? row.updated_at : max),
-    EPOCH,
-  );
+async function advanceCursor(table: string, newest: string): Promise<void> {
   const rewound = new Date(Date.parse(newest) - CURSOR_REWIND_MS).toISOString();
   await setMeta(cursorKey(table), rewound);
+}
+
+function maxIso(a: string, b: string): string {
+  return b > a ? b : a;
 }
 
 function cursorKey(table: string): string {

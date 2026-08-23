@@ -6,12 +6,14 @@ import { useEffect, useState } from "react";
 import { clearLocalData, db } from "@/lib/db";
 import { createClient } from "@/lib/supabase/client";
 import { sync } from "@/lib/sync";
+import { forgetKey } from "@/lib/vault";
 
 export function SyncBar() {
   const router = useRouter();
   const pathname = usePathname();
   const [online, setOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [locked, setLocked] = useState(false);
 
   const pending = useLiveQuery(
     () => db.transactions.where("dirty").equals(1).count(),
@@ -34,7 +36,8 @@ export function SyncBar() {
       setOnline(navigator.onLine);
       if (!navigator.onLine) return;
       setSyncing(true);
-      await sync();
+      const result = await sync();
+      setLocked(!result.ok && result.locked === true);
       setSyncing(false);
     }
 
@@ -55,6 +58,7 @@ export function SyncBar() {
 
   async function signOut() {
     await createClient().auth.signOut();
+    await forgetKey(); // clears the in-memory copy too, not just IndexedDB
     await clearLocalData(); // otherwise the next user reads this one's rows
     router.push("/login");
     router.refresh();
@@ -63,7 +67,9 @@ export function SyncBar() {
   // Nothing to sync or sign out of before the user is authenticated.
   if (pathname.startsWith("/login")) return null;
 
-  const label = !online
+  const label = locked
+    ? "ล็อกอยู่"
+    : !online
     ? `ออฟไลน์${pending > 0 ? ` · รอซิงก์ ${pending}` : ""}`
     : syncing
       ? "กำลังซิงก์..."
@@ -76,7 +82,11 @@ export function SyncBar() {
       <span className="flex items-center gap-1.5">
         <span
           className={`inline-block size-1.5 rounded-full ${
-            !online ? "bg-amber-500" : pending > 0 ? "bg-blue-500" : "bg-emerald-500"
+            locked || !online
+              ? "bg-amber-500"
+              : pending > 0
+                ? "bg-blue-500"
+                : "bg-emerald-500"
           }`}
         />
         {label}

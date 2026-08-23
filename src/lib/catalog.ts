@@ -110,3 +110,63 @@ export function livePresets(): Promise<LocalPreset[]> {
     .filter((p) => p.deleted_at === null)
     .toArray();
 }
+
+// ─── First-run defaults ──────────────────────────────────────────────────────
+
+const DEFAULT_CATEGORIES: [string, Kind, string][] = [
+  ["อาหาร", "expense", "🍜"],
+  ["เดินทาง", "expense", "🚕"],
+  ["ช้อปปิ้ง", "expense", "🛍️"],
+  ["ที่พัก", "expense", "🏠"],
+  ["สุขภาพ", "expense", "💊"],
+  ["บันเทิง", "expense", "🎬"],
+  ["อื่นๆ", "expense", "📦"],
+  ["เงินเดือน", "income", "💰"],
+  ["ฟรีแลนซ์", "income", "💻"],
+  ["รายได้อื่น", "income", "🎁"],
+];
+
+const DEFAULT_WALLETS: [string, string][] = [
+  ["เงินสด", "cash"],
+  ["ธนาคาร", "bank"],
+];
+
+/**
+ * Seeded on the client, not by a database trigger: the trigger has no key, so
+ * anything it wrote would sit in the table as readable plaintext.
+ */
+export async function seedDefaults(): Promise<void> {
+  const ledger = await ledgerId();
+  const now = new Date().toISOString();
+
+  if ((await db.categories.count()) === 0) {
+    await db.categories.bulkAdd(
+      DEFAULT_CATEGORIES.map(([name, kind, icon]) => ({
+        id: uuidv7(),
+        ledger_id: ledger,
+        name,
+        kind,
+        icon,
+        updated_at: now,
+        deleted_at: null,
+        dirty: 1 as const,
+      })),
+    );
+  }
+
+  if ((await db.wallets.count()) === 0) {
+    await db.wallets.bulkAdd(
+      DEFAULT_WALLETS.map(([name, kind]) => ({
+        id: uuidv7(),
+        ledger_id: ledger,
+        name,
+        kind,
+        updated_at: now,
+        deleted_at: null,
+        dirty: 1 as const,
+      })),
+    );
+  }
+
+  void sync();
+}

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import { Nav } from "@/components/nav";
 import { SyncBar } from "@/components/sync-bar";
+import { VaultGate } from "@/components/vault-gate";
 import "./globals.css";
 
 const notoThai = Noto_Sans_Thai({
@@ -39,8 +40,10 @@ export default function RootLayout({
             paddingTop: "calc(1.5rem + env(safe-area-inset-top))",
           }}
         >
-          <Nav />
-          {children}
+          <VaultGate>
+            <Nav />
+            {children}
+          </VaultGate>
           <SyncBar />
         </main>
       </body>
