@@ -28,6 +28,8 @@ import { currentKey } from "@/lib/vault";
 
 const EPOCH = "1970-01-01T00:00:00Z";
 
+const TABLES = ["categories", "wallets", "transactions", "presets"] as const;
+
 /** Clock skew and commit-order slack. Re-reading a few rows is free; missing one isn't. */
 const CURSOR_REWIND_MS = 2000;
 
@@ -36,6 +38,18 @@ let inFlight: Promise<SyncResult> | null = null;
 export type SyncResult =
   | { ok: true; pushed: number; undecryptable: number }
   | { ok: false; error: string; locked?: boolean };
+
+/**
+ * Forgets every cursor so the next pull re-reads the whole ledger.
+ *
+ * Needed right after a vault is created: a pre-encryption row is only converted
+ * when it comes back through pull, and on the device that wrote it the cursor is
+ * already past it — so without this, that plaintext would sit on the server for
+ * good.
+ */
+export async function resetCursors(): Promise<void> {
+  await Promise.all(TABLES.map((table) => setMeta(cursorKey(table), EPOCH)));
+}
 
 export function sync(): Promise<SyncResult> {
   // Collapse overlapping triggers (focus + online + a fresh write) into one run.

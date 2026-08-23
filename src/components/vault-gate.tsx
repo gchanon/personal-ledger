@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { seedDefaults } from "@/lib/catalog";
 import { getMeta, setMeta } from "@/lib/db";
 import { createClient } from "@/lib/supabase/client";
-import { sync } from "@/lib/sync";
+import { resetCursors, sync } from "@/lib/sync";
 import { createVault, currentKey, fetchWrappedKey, unlockVault } from "@/lib/vault";
 
 const MIN_PASSPHRASE = 10;
@@ -92,6 +92,10 @@ function SetupForm({
     setBusy(true);
     try {
       await createVault(ledgerId, passphrase);
+      // Re-read the whole ledger so anything stored before encryption comes
+      // back, gets flagged, and is pushed again as ciphertext.
+      await resetCursors();
+      await sync();
       await seedDefaults();
       onDone();
     } catch (err) {
