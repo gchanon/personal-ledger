@@ -15,6 +15,8 @@ import { createClient } from "@/lib/supabase/client";
  * anyone — which is the whole point, and the one thing the UI must say plainly.
  */
 
+export type EncryptionMode = "e2ee" | "plaintext";
+
 let cached: CryptoKey | null = null;
 
 export async function currentKey(): Promise<CryptoKey | null> {
@@ -113,4 +115,33 @@ export async function changePassphrase(
   await storeWrappedKey(ledgerId, await rewrapDataKey(dek, next));
   await remember(dek);
   return true;
+}
+
+// ─── Mode ────────────────────────────────────────────────────────────────────
+
+/** null means the user has not chosen yet. */
+export async function fetchMode(
+  ledgerId: string,
+): Promise<EncryptionMode | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("ledgers")
+    .select("encryption_mode")
+    .eq("id", ledgerId)
+    .single();
+
+  if (error) throw error;
+  return (data.encryption_mode as EncryptionMode | null) ?? null;
+}
+
+export async function setMode(
+  ledgerId: string,
+  mode: EncryptionMode,
+): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("ledgers")
+    .update({ encryption_mode: mode })
+    .eq("id", ledgerId);
+  if (error) throw error;
 }

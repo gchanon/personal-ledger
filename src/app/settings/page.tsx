@@ -3,6 +3,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
 import { EmojiPicker } from "@/components/emoji-picker";
+import { EncryptionSettings } from "@/components/encryption-settings";
 import { byThaiName } from "@/lib/analytics";
 import {
   addCategory,
@@ -36,6 +37,7 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-10">
       <PresetSection presets={presets} categories={categories} wallets={wallets} />
       <CategorySection categories={categories} />
+      <EncryptionSettings />
     </div>
   );
 }

@@ -48,12 +48,29 @@ export const LEGACY_COLUMNS: Record<string, string[]> = {
   ],
 };
 
+/**
+ * Which of the two shapes a ledger stores. Modelling the key as part of the
+ * e2ee variant makes "encrypted but no key" unrepresentable.
+ *
+ * plaintext still carries an optional key: right after a switch away from e2ee
+ * the server may still hold ciphertext rows that need opening once.
+ */
+export type Cipher =
+  | { mode: "e2ee"; dek: CryptoKey }
+  | { mode: "plaintext"; dek: CryptoKey | null };
+
 /** Splits a local row into readable routing columns plus one opaque blob. */
 export async function seal(
-  dek: CryptoKey,
+  cipher: Cipher,
   table: string,
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  if (cipher.mode === "plaintext") {
+    // Content goes into its own columns, and payload is cleared so switching
+    // away from e2ee doesn't leave stale ciphertext beside readable values.
+    return { ...row, payload: null };
+  }
+
   const routing: Record<string, unknown> = {};
   const content: Record<string, unknown> = {};
 
@@ -66,22 +83,26 @@ export async function seal(
     LEGACY_COLUMNS[table].map((column) => [column, null]),
   );
 
-  return { ...blanked, ...routing, payload: await encryptJson(dek, content) };
+  return { ...blanked, ...routing, payload: await encryptJson(cipher.dek, content) };
 }
 
-/** Throws when the key is wrong or the ciphertext was tampered with. */
+/** Throws when the key is missing or wrong, or the ciphertext was tampered with. */
 export async function open<T>(
-  dek: CryptoKey,
+  cipher: Cipher,
   row: Record<string, unknown>,
 ): Promise<T> {
   const { payload, ...routing } = row;
 
   if (typeof payload !== "string") {
-    // A row written before encryption. Readable as-is, and marked dirty so the
-    // next push replaces the plaintext copy with ciphertext.
-    return { ...routing, dirty: 1 } as T;
+    // Under plaintext this is simply the normal shape. Under e2ee it is a row
+    // from before encryption, and flagging it dirty is what converts it on the
+    // next push — flagging it in plaintext mode instead would spin forever:
+    // pull, flag, push, pull.
+    return { ...routing, dirty: cipher.mode === "e2ee" ? 1 : 0 } as T;
   }
 
-  const content = await decryptJson<Record<string, unknown>>(dek, payload);
+  if (!cipher.dek) throw new Error("ไม่มีกุญแจสำหรับถอดรหัสแถวนี้");
+
+  const content = await decryptJson<Record<string, unknown>>(cipher.dek, payload);
   return { ...routing, ...content, dirty: 0 } as T;
 }

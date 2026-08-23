@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EntityTable } from "dexie";
-import { open, seal } from "@/lib/envelope";
+import { open, seal, type Cipher } from "@/lib/envelope";
 import {
   db,
   getMeta,
@@ -11,7 +11,7 @@ import {
   type LocalWallet,
 } from "@/lib/db";
 import { createClient } from "@/lib/supabase/client";
-import { currentKey } from "@/lib/vault";
+import { currentKey, fetchMode } from "@/lib/vault";
 
 /**
  * Push-then-pull delta sync against Supabase, with every content field encrypted
@@ -37,7 +37,7 @@ let inFlight: Promise<SyncResult> | null = null;
 
 export type SyncResult =
   | { ok: true; pushed: number; undecryptable: number }
-  | { ok: false; error: string; locked?: boolean };
+  | { ok: false; error: string; locked?: boolean; unconfigured?: boolean };
 
 /**
  * Forgets every cursor so the next pull re-reads the whole ledger.
@@ -68,15 +68,26 @@ async function run(): Promise<SyncResult> {
   const { data } = await supabase.auth.getUser();
   if (!data.user) return { ok: false, error: "not signed in" };
 
-  // Without the key there is nothing safe to do: pushing would write plaintext
-  // and pulling would store ciphertext the app can't read.
-  const dek = await currentKey();
-  if (!dek) return { ok: false, error: "locked", locked: true };
-
   try {
-    await ensureLedgerId(supabase);
-    const pushed = await push(supabase, dek);
-    const undecryptable = await pull(supabase, dek);
+    const ledgerId = await ensureLedgerId(supabase);
+    const mode = await fetchMode(ledgerId);
+
+    // Until the user has chosen, writing either shape would be a guess.
+    if (!mode) return { ok: false, error: "unconfigured", unconfigured: true };
+
+    const dek = await currentKey();
+    let cipher: Cipher;
+    if (mode === "e2ee") {
+      // Under e2ee the key is not optional: pushing without it would write
+      // plaintext into a ledger whose whole promise is that it holds none.
+      if (!dek) return { ok: false, error: "locked", locked: true };
+      cipher = { mode, dek };
+    } else {
+      cipher = { mode: "plaintext", dek };
+    }
+
+    const pushed = await push(supabase, cipher);
+    const undecryptable = await pull(supabase, cipher);
     await setMeta("last_synced_at", new Date().toISOString());
     return { ok: true, pushed, undecryptable };
   } catch (e) {
@@ -84,8 +95,9 @@ async function run(): Promise<SyncResult> {
   }
 }
 
-async function ensureLedgerId(supabase: SupabaseClient): Promise<void> {
-  if (await getMeta("ledger_id")) return;
+async function ensureLedgerId(supabase: SupabaseClient): Promise<string> {
+  const known = await getMeta("ledger_id");
+  if (known) return known;
 
   const { data, error } = await supabase
     .from("ledger_members")
@@ -95,26 +107,27 @@ async function ensureLedgerId(supabase: SupabaseClient): Promise<void> {
 
   if (error) throw error;
   await setMeta("ledger_id", data.ledger_id);
+  return data.ledger_id as string;
 }
 
 type Dirty = { id: string; updated_at: string; dirty: 0 | 1 };
 
 // ─── Push ────────────────────────────────────────────────────────────────────
 
-async function push(supabase: SupabaseClient, dek: CryptoKey): Promise<number> {
+async function push(supabase: SupabaseClient, cipher: Cipher): Promise<number> {
   let pushed = 0;
   // Categories and wallets before transactions: a transaction can reference one
   // that exists only on this device, and the foreign key rejects that order.
-  pushed += await pushTable(supabase, dek, "categories", db.categories);
-  pushed += await pushTable(supabase, dek, "wallets", db.wallets);
-  pushed += await pushTable(supabase, dek, "transactions", db.transactions);
-  pushed += await pushTable(supabase, dek, "presets", db.presets);
+  pushed += await pushTable(supabase, cipher, "categories", db.categories);
+  pushed += await pushTable(supabase, cipher, "wallets", db.wallets);
+  pushed += await pushTable(supabase, cipher, "transactions", db.transactions);
+  pushed += await pushTable(supabase, cipher, "presets", db.presets);
   return pushed;
 }
 
 async function pushTable<T extends Dirty>(
   supabase: SupabaseClient,
-  dek: CryptoKey,
+  cipher: Cipher,
   table: string,
   store: EntityTable<T, "id">,
 ): Promise<number> {
@@ -122,7 +135,7 @@ async function pushTable<T extends Dirty>(
   if (dirty.length === 0) return 0;
 
   const payload = await Promise.all(
-    dirty.map(({ dirty: _dirty, ...row }) => seal(dek, table, row)),
+    dirty.map(({ dirty: _dirty, ...row }) => seal(cipher, table, row)),
   );
 
   const { error } = await supabase.from(table).upsert(payload);
@@ -148,23 +161,23 @@ async function pushTable<T extends Dirty>(
 // ─── Pull ────────────────────────────────────────────────────────────────────
 
 /** Returns how many rows could not be decrypted. */
-async function pull(supabase: SupabaseClient, dek: CryptoKey): Promise<number> {
+async function pull(supabase: SupabaseClient, cipher: Cipher): Promise<number> {
   let failed = 0;
-  failed += await pullTable<LocalCategory>(supabase, dek, "categories", db.categories);
-  failed += await pullTable<LocalWallet>(supabase, dek, "wallets", db.wallets);
+  failed += await pullTable<LocalCategory>(supabase, cipher, "categories", db.categories);
+  failed += await pullTable<LocalWallet>(supabase, cipher, "wallets", db.wallets);
   failed += await pullTable<LocalTransaction>(
     supabase,
-    dek,
+    cipher,
     "transactions",
     db.transactions,
   );
-  failed += await pullTable<LocalPreset>(supabase, dek, "presets", db.presets);
+  failed += await pullTable<LocalPreset>(supabase, cipher, "presets", db.presets);
   return failed;
 }
 
 async function pullTable<T extends Dirty>(
   supabase: SupabaseClient,
-  dek: CryptoKey,
+  cipher: Cipher,
   table: string,
   store: EntityTable<T, "id">,
 ): Promise<number> {
@@ -189,7 +202,7 @@ async function pullTable<T extends Dirty>(
     }
 
     try {
-      opened.push(await open<T>(dek, row));
+      opened.push(await open<T>(cipher, row));
       newestHandled = maxIso(newestHandled, updatedAt);
     } catch {
       // Wrong key or damaged ciphertext. Leaving the cursor behind this row
@@ -231,4 +244,19 @@ function maxIso(a: string, b: string): string {
 
 function cursorKey(table: string): string {
   return `cursor:${table}`;
+}
+
+/**
+ * Flags every local row for re-push. Used when the encryption mode changes:
+ * the shape of every row on the server has to change with it, and the local
+ * copy is already the plaintext source of truth either way.
+ */
+export async function markEverythingDirty(): Promise<void> {
+  const flag = (row: { dirty: 0 | 1 }) => {
+    row.dirty = 1;
+  };
+  await db.categories.toCollection().modify(flag);
+  await db.wallets.toCollection().modify(flag);
+  await db.transactions.toCollection().modify(flag);
+  await db.presets.toCollection().modify(flag);
 }
