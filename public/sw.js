@@ -1,11 +1,11 @@
 // Minimal offline shell. Hand-rolled rather than pulled from a plugin: the whole
-// job is three routes and the build's static chunks.
+// job is four routes and the build's static chunks.
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = `shell-${VERSION}`;
 const ASSETS = `assets-${VERSION}`;
 
-const SHELL_ROUTES = ["/", "/transactions", "/transactions/edit"];
+const SHELL_ROUTES = ["/", "/transactions", "/transactions/edit", "/dashboard"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

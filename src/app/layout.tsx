@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
+import { Nav } from "@/components/nav";
 import { SyncBar } from "@/components/sync-bar";
 import "./globals.css";
 
@@ -38,6 +39,7 @@ export default function RootLayout({
             paddingTop: "calc(1.5rem + env(safe-area-inset-top))",
           }}
         >
+          <Nav />
           {children}
           <SyncBar />
         </main>

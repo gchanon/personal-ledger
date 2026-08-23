@@ -8,8 +8,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-thai);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +21,42 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/*
+ * Chart tokens. Both modes are chosen, not flipped — the dark steps are picked
+ * for the dark surface. Validated against this app's actual surfaces
+ * (#ffffff / #0a0a0a): all six checks pass on both.
+ */
+.viz {
+  --viz-series-1: #2a78d6; /* expense */
+  --viz-series-2: #eb6834; /* income */
+  --viz-muted: #898781;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+
+  /* Sequential ramp for the calendar. Near-zero recedes toward the surface. */
+  --viz-heat-0: #f2f1ee;
+  --viz-heat-1: #cde2fb;
+  --viz-heat-2: #9ec5f4;
+  --viz-heat-3: #6da7ec;
+  --viz-heat-4: #3987e5;
+  --viz-heat-5: #1c5cab;
+}
+
+@media (prefers-color-scheme: dark) {
+  .viz {
+    --viz-series-1: #3987e5;
+    --viz-series-2: #d95926;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+
+    /* Inverted direction: on a dark surface, "near zero" is the dark end. */
+    --viz-heat-0: #1c1c1b;
+    --viz-heat-1: #104281;
+    --viz-heat-2: #184f95;
+    --viz-heat-3: #256abf;
+    --viz-heat-4: #3987e5;
+    --viz-heat-5: #86b6ef;
+  }
 }

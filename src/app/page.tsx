@@ -1,7 +1,6 @@
 "use client";
 
 import { useLiveQuery } from "dexie-react-hooks";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { TransactionForm } from "@/components/transaction-form";
@@ -42,9 +41,6 @@ function TodayHeader() {
         <p className="text-xs text-neutral-500">ใช้ไปวันนี้</p>
         <p className="text-2xl font-semibold tabular-nums">฿{formatMinor(spentToday)}</p>
       </div>
-      <Link href="/transactions" className="text-sm text-neutral-500 underline">
-        ดูรายการ
-      </Link>
     </header>
   );
 }

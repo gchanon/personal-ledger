@@ -21,3 +21,8 @@ export function parseToMinor(input: string): number | null {
   const minor = Math.round(Number(cleaned) * 100);
   return minor > 0 ? minor : null;
 }
+
+/** Rounded whole baht — satang is noise on axis ticks and chart labels. */
+export function formatBaht(minor: number): string {
+  return `฿${Math.round(minor / 100).toLocaleString("th-TH")}`;
+}

@@ -19,9 +19,6 @@ export default function TransactionsPage() {
     <div className="flex flex-col gap-6">
       <header className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold">รายการล่าสุด</h1>
-        <Link href="/" className="text-sm text-neutral-500 underline">
-          จดรายการ
-        </Link>
       </header>
 
       {rows.length === 0 && (
