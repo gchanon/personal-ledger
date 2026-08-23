@@ -1,27 +1,18 @@
+"use client";
+
+import { useLiveQuery } from "dexie-react-hooks";
 import Link from "next/link";
-import { getActiveLedgerId } from "@/lib/ledger";
+import { db, type LocalCategory, type LocalTransaction } from "@/lib/db";
 import { formatMinor } from "@/lib/money";
-import { createClient } from "@/lib/supabase/server";
+import { liveTransactions } from "@/lib/transactions";
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 200;
 
-// Rendering happens on the server (UTC on most hosts), so every date boundary
-// has to name the ledger's zone explicitly.
-const TZ = "Asia/Bangkok";
+export default function TransactionsPage() {
+  const rows = useLiveQuery(() => liveTransactions(PAGE_SIZE), [], []);
+  const categories = useLiveQuery(() => db.categories.toArray(), [], []);
 
-export default async function TransactionsPage() {
-  const supabase = await createClient();
-  const ledgerId = await getActiveLedgerId();
-
-  const { data } = await supabase
-    .from("transactions")
-    .select("id, occurred_at, amount_minor, kind, note, categories(name, icon)")
-    .eq("ledger_id", ledgerId)
-    .is("deleted_at", null)
-    .order("occurred_at", { ascending: false })
-    .limit(PAGE_SIZE);
-
-  const rows = (data ?? []) as unknown as Row[];
+  const byId = new Map(categories.map((c: LocalCategory) => [c.id, c]));
   const byDay = groupByDay(rows);
 
   return (
@@ -43,40 +34,45 @@ export default async function TransactionsPage() {
         <section key={day} className="flex flex-col gap-1">
           <div className="flex justify-between px-1 pb-1 text-xs text-neutral-500">
             <span>{formatDay(day)}</span>
-            <span className="tabular-nums">
-              ฿{formatMinor(dayTotal(items))}
-            </span>
+            <span className="tabular-nums">{formatSigned(dayTotal(items))}</span>
           </div>
 
           <ul className="divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
-            {items.map((t) => (
-              <li key={t.id}>
-                <Link
-                  href={`/transactions/${t.id}`}
-                  className="flex items-center gap-3 px-3 py-3 active:bg-neutral-50 dark:active:bg-neutral-900"
-                >
-                  <span className="text-xl">{t.categories?.icon ?? "📦"}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">
-                      {t.categories?.name ?? "ไม่ระบุหมวด"}
-                    </span>
-                    {t.note && (
-                      <span className="block truncate text-xs text-neutral-500">
-                        {t.note}
-                      </span>
-                    )}
-                  </span>
-                  <span
-                    className={`tabular-nums ${
-                      t.kind === "income" ? "text-emerald-600" : ""
-                    }`}
+            {items.map((t) => {
+              const category = t.category_id ? byId.get(t.category_id) : undefined;
+              return (
+                <li key={t.id}>
+                  <Link
+                    href={`/transactions/edit?id=${t.id}`}
+                    className="flex items-center gap-3 px-3 py-3 active:bg-neutral-50 dark:active:bg-neutral-900"
                   >
-                    {t.kind === "income" ? "+" : "-"}
-                    {formatMinor(t.amount_minor)}
-                  </span>
-                </Link>
-              </li>
-            ))}
+                    <span className="text-xl">{category?.icon ?? "📦"}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">
+                        {category?.name ?? "ไม่ระบุหมวด"}
+                      </span>
+                      {t.note && (
+                        <span className="block truncate text-xs text-neutral-500">
+                          {t.note}
+                        </span>
+                      )}
+                    </span>
+                    {t.dirty === 1 && (
+                      <span
+                        className="size-1.5 shrink-0 rounded-full bg-blue-500"
+                        title="ยังไม่ได้ซิงก์"
+                      />
+                    )}
+                    <span
+                      className={`tabular-nums ${t.kind === "income" ? "text-emerald-600" : ""}`}
+                    >
+                      {t.kind === "income" ? "+" : "-"}
+                      {formatMinor(t.amount_minor)}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ))}
@@ -84,21 +80,12 @@ export default async function TransactionsPage() {
   );
 }
 
-type Row = {
-  id: string;
-  occurred_at: string;
-  amount_minor: number;
-  kind: string;
-  note: string | null;
-  categories: { name: string; icon: string | null } | null;
-};
-
-function groupByDay(rows: Row[]): [string, Row[]][] {
-  const map = new Map<string, Row[]>();
+function groupByDay(rows: LocalTransaction[]): [string, LocalTransaction[]][] {
+  const map = new Map<string, LocalTransaction[]>();
   for (const row of rows) {
-    // Group by local calendar day. Slicing the ISO string would bucket a 03:00
-    // Bangkok transaction into the previous UTC day.
-    const day = new Date(row.occurred_at).toLocaleDateString("sv-SE", { timeZone: TZ });
+    // Group by the device's calendar day. Slicing the ISO string would bucket a
+    // 03:00 Bangkok transaction into the previous UTC day.
+    const day = new Date(row.occurred_at).toLocaleDateString("sv-SE");
     const bucket = map.get(day);
     if (bucket) bucket.push(row);
     else map.set(day, [row]);
@@ -106,11 +93,15 @@ function groupByDay(rows: Row[]): [string, Row[]][] {
   return [...map.entries()];
 }
 
-function dayTotal(items: Row[]): number {
+function dayTotal(items: LocalTransaction[]): number {
   return items.reduce(
     (sum, t) => sum + (t.kind === "income" ? t.amount_minor : -t.amount_minor),
     0,
   );
+}
+
+function formatSigned(minor: number): string {
+  return `${minor < 0 ? "-" : "+"}฿${formatMinor(Math.abs(minor))}`;
 }
 
 function formatDay(day: string): string {

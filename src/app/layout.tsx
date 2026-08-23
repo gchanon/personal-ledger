@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
+import { SyncBar } from "@/components/sync-bar";
 import "./globals.css";
 
 const notoThai = Noto_Sans_Thai({
@@ -38,6 +39,7 @@ export default function RootLayout({
           }}
         >
           {children}
+          <SyncBar />
         </main>
       </body>
     </html>

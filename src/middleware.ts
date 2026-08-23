@@ -45,5 +45,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/).*)"],
+  // sw.js must never be redirected — a 307 here breaks service worker
+  // registration outright, and with it the whole offline shell.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|apple-touch-icon.png|icons/).*)",
+  ],
 };

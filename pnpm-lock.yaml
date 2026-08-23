@@ -14,6 +14,12 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.112.3
         version: 2.112.3
+      dexie:
+        specifier: ^4.4.5
+        version: 4.4.5
+      dexie-react-hooks:
+        specifier: ^4.4.0
+        version: 4.4.0(dexie@4.4.5)(react@19.1.0)
       next:
         specifier: 15.5.23
         version: 15.5.23(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -438,6 +444,15 @@ packages:
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
+
+  dexie-react-hooks@4.4.0:
+    resolution: {integrity: sha512-ObLXBS5+4BJU8vtSvBx6b9fY6zZYgniAtwxzjCHsUQadgbqYN6935X2/1TWw4Rf2N1aZV1io5/ziox4vKuxABA==}
+    peerDependencies:
+      dexie: '>=4.2.0-alpha.1 <5.0.0'
+      react: '>=16'
+
+  dexie@4.4.5:
+    resolution: {integrity: sha512-wWCHdihT3dmlUSuNhn5mMZDWSpG0suxjAni7YjjiZdzabZcKmy3uNZGZ7AeYYXBoLbpSXX35fikPLkPC44Osiw==}
 
   enhanced-resolve@5.24.5:
     resolution: {integrity: sha512-L1l8TNvomm6UVW5B253AGxQagSQr+vGwhMlrrfRS2qmhx46AMpMVJKQYLvWYbysTMY8VoicOvzHzoHMbyzB+4A==}
@@ -910,6 +925,13 @@ snapshots:
   csstype@3.2.3: {}
 
   detect-libc@2.1.2: {}
+
+  dexie-react-hooks@4.4.0(dexie@4.4.5)(react@19.1.0):
+    dependencies:
+      dexie: 4.4.5
+      react: 19.1.0
+
+  dexie@4.4.5: {}
 
   enhanced-resolve@5.24.5:
     dependencies:

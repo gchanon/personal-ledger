@@ -50,9 +50,25 @@ https://<host>/?amount=25000&kind=income&cat=เงินเดือน
 - **RLS เป็นด่านกั้น tenant** — ไม่ใช่โค้ดฝั่ง application
 - **`ledger_id` อยู่ทุกตารางตั้งแต่วันแรก** — แชร์บัญชีทีหลังจะไม่ต้อง migrate
 
+## Offline & sync ทำงานยังไง
+
+หน้าจอทั้งหมดอ่านจาก **IndexedDB (Dexie)** ไม่ได้อ่านจาก server โดยตรง
+เขียนก็ลง IndexedDB ก่อนเสมอแล้วค่อย push ขึ้น Supabase เบื้องหลัง
+UI จึงไม่เคยรอเน็ต และปิดเน็ตก็ยังจดได้
+
+- `src/lib/db.ts` — schema ฝั่งเครื่อง (`dirty = 1` คือยังไม่ได้ push)
+- `src/lib/sync.ts` — push ก่อน pull, last-write-wins รายแถว
+- `public/sw.js` — cache app shell ให้เปิดแอพได้ตอนออฟไลน์
+
+เบราว์เซอร์คุยกับ Supabase ตรงๆ ไม่มี API layer เพราะ **RLS** กันข้อมูลข้ามผู้ใช้
+ให้อยู่แล้ว
+
+> **IndexedDB เป็นแค่ cache** — Safari ล้าง storage ทิ้งได้ถ้าไม่ได้เปิดเว็บนานๆ
+> Supabase คือ source of truth เสมอ นี่คือเหตุผลที่ sync ต้อง push ก่อน pull
+
 ## ยังไม่ได้ทำ (ตามลำดับที่ควรทำต่อ)
 
-1. Offline — Dexie cache + sync queue + service worker
-2. Dashboards
-3. แชร์ ledger + จัดการหมวดหมู่/กระเป๋าเงินในแอพ
-4. Export CSV / ลบบัญชี (PDPA)
+1. Dashboards
+2. แชร์ ledger + จัดการหมวดหมู่/กระเป๋าเงินในแอพ
+3. Export CSV / ลบบัญชี (PDPA)
+4. Web Push เตือนตอนเย็นว่ายังไม่ได้จด

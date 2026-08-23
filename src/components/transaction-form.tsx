@@ -1,27 +1,39 @@
 "use client";
 
+import { useLiveQuery } from "dexie-react-hooks";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
-import { createTransaction, deleteTransaction, updateTransaction } from "@/app/actions";
-import type { Category, Kind, Transaction, Wallet } from "@/lib/types";
+import { useRef, useState } from "react";
+import { db, type LocalTransaction } from "@/lib/db";
+import { parseToMinor } from "@/lib/money";
+import {
+  addTransaction,
+  editTransaction,
+  removeTransaction,
+  type TransactionInput,
+} from "@/lib/transactions";
+import type { Kind } from "@/lib/types";
 
 type Props = {
-  categories: Category[];
-  wallets: Wallet[];
   /** Absent = create mode. Present = edit mode. */
-  transaction?: Transaction;
+  transaction?: LocalTransaction;
   prefill?: { amount?: string; note?: string; kind?: Kind; category?: string };
 };
 
-export function TransactionForm({
-  categories,
-  wallets,
-  transaction,
-  prefill = {},
-}: Props) {
+export function TransactionForm({ transaction, prefill = {} }: Props) {
   const editing = transaction !== undefined;
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+
+  const categories = useLiveQuery(
+    () => db.categories.filter((c) => c.deleted_at === null).sortBy("name"),
+    [],
+    [],
+  );
+  const wallets = useLiveQuery(
+    () => db.wallets.filter((w) => w.deleted_at === null).sortBy("name"),
+    [],
+    [],
+  );
 
   const [kind, setKind] = useState<Kind>(
     transaction?.kind ?? prefill.kind ?? "expense",
@@ -29,47 +41,65 @@ export function TransactionForm({
   const [amount, setAmount] = useState(
     transaction ? (transaction.amount_minor / 100).toFixed(2) : (prefill.amount ?? ""),
   );
-  const [categoryId, setCategoryId] = useState(
-    () =>
-      transaction?.category_id ??
-      categories.find((c) => c.name === prefill.category)?.id ??
-      "",
-  );
+  const [categoryId, setCategoryId] = useState(transaction?.category_id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false);
+
+  // Categories arrive from the first sync, so a name-based prefill can only be
+  // resolved once they're loaded.
+  const prefilledCategory = prefill.category
+    ? categories.find((c) => c.name === prefill.category)?.id
+    : undefined;
+  const selectedCategory = categoryId || prefilledCategory || "";
 
   const visible = categories.filter((c) => c.kind === kind);
 
-  function submit(form: FormData) {
-    setError(null);
-    startTransition(async () => {
-      const result = editing
-        ? await updateTransaction(form)
-        : await createTransaction(form);
+  async function submit(form: FormData) {
+    const amountMinor = parseToMinor(String(form.get("amount") ?? ""));
+    if (amountMinor === null) {
+      setError("จำนวนเงินไม่ถูกต้อง");
+      return;
+    }
 
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
+    const occurredAt = String(form.get("occurred_at") ?? "");
+    const input: TransactionInput = {
+      amount_minor: amountMinor,
+      kind,
+      occurred_at: occurredAt
+        ? new Date(occurredAt).toISOString()
+        : new Date().toISOString(),
+      category_id: selectedCategory || null,
+      wallet_id: String(form.get("wallet_id") ?? "") || null,
+      note: String(form.get("note") ?? "").trim() || null,
+    };
+
+    setError(null);
+    setBusy(true);
+    try {
       if (editing) {
+        await editTransaction(transaction.id, input);
         router.push("/transactions");
-        return;
+      } else {
+        await addTransaction(input);
+        formRef.current?.reset();
+        setAmount("");
+        setCategoryId("");
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1500);
       }
-      formRef.current?.reset();
-      setAmount("");
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function remove() {
+  async function remove() {
     if (!transaction || !confirm("ลบรายการนี้?")) return;
-    startTransition(async () => {
-      const result = await deleteTransaction(transaction.id);
-      if (result.ok) router.push("/transactions");
-      else setError(result.error);
-    });
+    setBusy(true);
+    await removeTransaction(transaction.id);
+    router.push("/transactions");
   }
 
   function switchKind(next: Kind) {
@@ -79,10 +109,6 @@ export function TransactionForm({
 
   return (
     <form ref={formRef} action={submit} className="flex flex-col gap-5">
-      {editing && <input type="hidden" name="id" value={transaction.id} />}
-      <input type="hidden" name="kind" value={kind} />
-      <input type="hidden" name="category_id" value={categoryId} />
-
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1 dark:bg-neutral-800">
         {(["expense", "income"] as const).map((k) => (
           <button
@@ -121,7 +147,7 @@ export function TransactionForm({
             type="button"
             onClick={() => setCategoryId(c.id)}
             className={`flex flex-col items-center gap-1 rounded-xl border py-3 text-xs transition ${
-              categoryId === c.id
+              selectedCategory === c.id
                 ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
                 : "border-neutral-200 dark:border-neutral-800"
             }`}
@@ -163,17 +189,17 @@ export function TransactionForm({
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={busy}
         className="rounded-xl bg-neutral-900 py-4 text-lg font-medium text-white transition disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
       >
-        {pending ? "กำลังบันทึก..." : saved ? "บันทึกแล้ว ✓" : "บันทึก"}
+        {busy ? "กำลังบันทึก..." : saved ? "บันทึกแล้ว ✓" : "บันทึก"}
       </button>
 
       {editing && (
         <button
           type="button"
           onClick={remove}
-          disabled={pending}
+          disabled={busy}
           className="py-2 text-sm text-red-600 disabled:opacity-50"
         >
           ลบรายการนี้
