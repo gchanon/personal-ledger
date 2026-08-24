@@ -39,9 +39,30 @@ export function formatMonth(key: MonthKey, style: "long" | "short" = "long"): st
 }
 
 function inMonth(row: LocalTransaction, key: MonthKey): boolean {
-  const { start, end } = monthBounds(key);
+  return inRange(row, monthBounds(key));
+}
+
+/** Half-open [start, end) so a day and the next never both claim midnight. */
+export type Range = { start: Date; end: Date };
+
+export function dayRange(date: Date): Range {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+function inRange(row: LocalTransaction, range: Range): boolean {
   const at = new Date(row.occurred_at);
-  return at >= start && at < end;
+  return at >= range.start && at < range.end;
+}
+
+export function formatDate(date: Date): string {
+  return date.toLocaleDateString("th-TH", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 }
 
 // ─── Headline numbers ────────────────────────────────────────────────────────
@@ -74,13 +95,13 @@ export type CategorySlice = {
 export function spendByCategory(
   rows: LocalTransaction[],
   categories: LocalCategory[],
-  key: MonthKey,
+  range: Range,
   keep = 7,
 ): CategorySlice[] {
   const totals = new Map<string, number>();
 
   for (const row of rows) {
-    if (row.kind !== "expense" || !inMonth(row, key)) continue;
+    if (row.kind !== "expense" || !inRange(row, range)) continue;
     const id = row.category_id ?? "uncategorized";
     totals.set(id, (totals.get(id) ?? 0) + row.amount_minor);
   }

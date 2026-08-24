@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { DayCell } from "@/lib/analytics";
 import { formatBaht } from "@/lib/money";
 
@@ -11,8 +10,16 @@ const STEPS = 5;
  * Magnitude on a grid — sequential, one hue, more-is-darker (more-is-lighter on
  * the dark surface, where receding means going toward black).
  */
-export function CalendarHeatmap({ cells }: { cells: DayCell[] }) {
-  const [selected, setSelected] = useState<DayCell | null>(null);
+export function CalendarHeatmap({
+  cells,
+  selectedDay,
+  onSelect,
+}: {
+  cells: DayCell[];
+  selectedDay: number | null;
+  onSelect: (day: number | null) => void;
+}) {
+  const selected = cells.find((c) => c.day === selectedDay) ?? null;
 
   const max = Math.max(...cells.map((c) => c.total), 0);
   const leadingBlanks = cells.length > 0 ? cells[0].date.getDay() : 0;
@@ -36,10 +43,11 @@ export function CalendarHeatmap({ cells }: { cells: DayCell[] }) {
             <button
               key={cell.day}
               type="button"
-              onClick={() => setSelected(cell)}
+              // Tapping the selected day again clears it, back to the whole month.
+              onClick={() => onSelect(selectedDay === cell.day ? null : cell.day)}
               aria-label={`วันที่ ${cell.day} ใช้ไป ${formatBaht(cell.total)}`}
               className={`flex aspect-square items-center justify-center rounded-md text-[10px] tabular-nums transition ${
-                selected?.day === cell.day
+                selectedDay === cell.day
                   ? "ring-2 ring-neutral-900 dark:ring-neutral-100"
                   : ""
               } ${
@@ -59,7 +67,7 @@ export function CalendarHeatmap({ cells }: { cells: DayCell[] }) {
         <span>
           {selected
             ? `${selected.day} — ${formatBaht(selected.total)}`
-            : "แตะวันที่เพื่อดูยอด"}
+            : "แตะวันที่เพื่อดูว่าหมดไปกับอะไร"}
         </span>
         <span className="flex items-center gap-1">
           <span className="text-[10px]">น้อย</span>

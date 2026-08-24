@@ -8,6 +8,8 @@ import { TrendLines } from "@/components/charts/trend-lines";
 import {
   currentMonthKey,
   dailySpend,
+  dayRange,
+  formatDate,
   formatMonth,
   monthBounds,
   monthlyTrend,
@@ -23,6 +25,7 @@ const TREND_MONTHS = 12;
 
 export default function DashboardPage() {
   const [month, setMonth] = useState<MonthKey>(currentMonthKey);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   // One window covers every chart on the page: the trend needs the 11 months
   // before the selected one, the rest need only the month itself.
@@ -41,13 +44,21 @@ export default function DashboardPage() {
   const summary = summarize(rows, month);
   const isCurrentMonth = month === currentMonthKey();
 
+  const cells = dailySpend(rows, month);
+  const selectedDate = cells.find((c) => c.day === selectedDay)?.date ?? null;
+  // No day picked means the breakdown covers the whole month.
+  const scope = selectedDate ? dayRange(selectedDate) : monthBounds(month);
+
   return (
     <div className="flex flex-col gap-8">
       {/* One filter row, above everything it scopes. */}
       <div className="flex items-center justify-between">
         <button
           type="button"
-          onClick={() => setMonth(shiftMonth(month, -1))}
+          onClick={() => {
+            setMonth(shiftMonth(month, -1));
+            setSelectedDay(null);
+          }}
           className="size-9 rounded-lg text-lg text-neutral-500 active:bg-neutral-100 dark:active:bg-neutral-800"
           aria-label="เดือนก่อนหน้า"
         >
@@ -56,7 +67,10 @@ export default function DashboardPage() {
         <span className="text-sm font-medium">{formatMonth(month)}</span>
         <button
           type="button"
-          onClick={() => setMonth(shiftMonth(month, 1))}
+          onClick={() => {
+            setMonth(shiftMonth(month, 1));
+            setSelectedDay(null);
+          }}
           disabled={isCurrentMonth}
           className="size-9 rounded-lg text-lg text-neutral-500 disabled:opacity-25 active:bg-neutral-100 dark:active:bg-neutral-800"
           aria-label="เดือนถัดไป"
@@ -78,16 +92,37 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <Panel title="รายจ่ายตามหมวด">
-        <CategoryBars slices={spendByCategory(rows, categories, month)} />
+      {/* The calendar sits above the breakdown because it selects for it:
+          picking a day should change something the eye is already heading toward,
+          not something it has already passed. */}
+      <Panel title="ใช้จ่ายรายวัน">
+        <CalendarHeatmap
+          cells={cells}
+          selectedDay={selectedDay}
+          onSelect={setSelectedDay}
+        />
       </Panel>
+
+      <section className="viz flex flex-col gap-4">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-sm font-medium text-neutral-500">
+            {selectedDate ? `หมดไปกับอะไร — ${formatDate(selectedDate)}` : "รายจ่ายตามหมวด — ทั้งเดือน"}
+          </h2>
+          {selectedDay !== null && (
+            <button
+              type="button"
+              onClick={() => setSelectedDay(null)}
+              className="shrink-0 text-sm text-neutral-500 underline"
+            >
+              ดูทั้งเดือน
+            </button>
+          )}
+        </div>
+        <CategoryBars slices={spendByCategory(rows, categories, scope)} />
+      </section>
 
       <Panel title={`แนวโน้ม ${TREND_MONTHS} เดือน`}>
         <TrendLines points={monthlyTrend(rows, month, TREND_MONTHS)} />
-      </Panel>
-
-      <Panel title="ใช้จ่ายรายวัน">
-        <CalendarHeatmap cells={dailySpend(rows, month)} />
       </Panel>
     </div>
   );
