@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { clearLocalData, db } from "@/lib/db";
 import { createClient } from "@/lib/supabase/client";
+import { materializeRecurring } from "@/lib/recurring";
 import { sync } from "@/lib/sync";
 import { forgetKey } from "@/lib/vault";
 
@@ -37,6 +38,9 @@ export function SyncBar() {
       setOnline(navigator.onLine);
       if (!navigator.onLine) return;
       setSyncing(true);
+      // Book any standing commitments that have come due before syncing, so a
+      // freshly generated row rides out on the same pass.
+      await materializeRecurring().catch(() => {});
       const result = await sync();
       setLocked(!result.ok && result.locked === true);
       setUnconfigured(!result.ok && result.unconfigured === true);

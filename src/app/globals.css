@@ -25,12 +25,18 @@ body {
 
 /*
  * Chart tokens. Both modes are chosen, not flipped — the dark steps are picked
- * for the dark surface. Validated against this app's actual surfaces
- * (#ffffff / #0a0a0a): all six checks pass on both.
+ * for the dark surface.
+ *
+ * Series 1 and 2 were run against this app's own surfaces (#ffffff / #0a0a0a)
+ * and pass every check in both modes. Series 3 is the reference palette's third
+ * slot, taken on the documented result that its first three slots clear the
+ * all-pairs gates; it was not re-run here. That slot sits under 3:1 on white,
+ * so anything using it must also carry a visible label — see bucket-bars.tsx.
  */
 .viz {
   --viz-series-1: #2a78d6; /* expense */
   --viz-series-2: #eb6834; /* income */
+  --viz-series-3: #1baf7a; /* third bucket */
   --viz-muted: #898781;
   --viz-grid: #e1e0d9;
   --viz-axis: #c3c2b7;
@@ -48,6 +54,7 @@ body {
   .viz {
     --viz-series-1: #3987e5;
     --viz-series-2: #d95926;
+    --viz-series-3: #199e70;
     --viz-grid: #2c2c2a;
     --viz-axis: #383835;
 

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Kind } from "@/lib/types";
+import type { Bucket, Kind } from "@/lib/types";
 
 /**
  * The IndexedDB mirror. Safari evicts this storage after periods of disuse, so
@@ -30,6 +30,7 @@ export type LocalCategory = {
   name: string;
   kind: Kind;
   icon: string | null;
+  bucket: Bucket | null;
   updated_at: string;
   deleted_at: string | null;
   dirty: 0 | 1;
@@ -68,6 +69,26 @@ export type LocalWallet = {
  */
 export type StoredKey = { id: "dek"; key: CryptoKey };
 
+/** A standing monthly commitment, materialised into transactions by the client. */
+export type LocalRecurring = {
+  id: string;
+  ledger_id: string;
+  label: string;
+  icon: string | null;
+  kind: Kind;
+  amount_minor: number;
+  category_id: string | null;
+  wallet_id: string | null;
+  note: string | null;
+  /** 1..31, clamped to the last day of shorter months. */
+  day_of_month: number;
+  /** 'YYYY-MM' — nothing is generated before this. */
+  start_month: string;
+  updated_at: string;
+  deleted_at: string | null;
+  dirty: 0 | 1;
+};
+
 export type Meta = { key: string; value: string };
 
 export const db = new Dexie("ledger") as Dexie & {
@@ -75,6 +96,7 @@ export const db = new Dexie("ledger") as Dexie & {
   categories: EntityTable<LocalCategory, "id">;
   wallets: EntityTable<LocalWallet, "id">;
   presets: EntityTable<LocalPreset, "id">;
+  recurring: EntityTable<LocalRecurring, "id">;
   keys: EntityTable<StoredKey, "id">;
   meta: EntityTable<Meta, "key">;
 };
@@ -125,6 +147,27 @@ db.version(3)
       }),
   );
 
+// v4 adds recurring commitments and the bucket a category belongs to.
+db.version(4)
+  .stores({
+    transactions: "id, occurred_at, dirty, updated_at",
+    categories: "id, kind, dirty",
+    wallets: "id, dirty",
+    presets: "id, sort_order, dirty",
+    recurring: "id, dirty",
+    keys: "id",
+    meta: "key",
+  })
+  .upgrade((tx) =>
+    tx
+      .table("categories")
+      .toCollection()
+      .modify((row) => {
+        // Absent means variable; make it explicit so the UI has something to show.
+        row.bucket ??= "variable";
+      }),
+  );
+
 export async function getMeta(key: string): Promise<string | undefined> {
   return (await db.meta.get(key))?.value;
 }
@@ -137,13 +180,14 @@ export async function setMeta(key: string, value: string): Promise<void> {
 export async function clearLocalData(): Promise<void> {
   await db.transaction(
     "rw",
-    [db.transactions, db.categories, db.wallets, db.presets, db.keys, db.meta],
+    [db.transactions, db.categories, db.wallets, db.presets, db.recurring, db.keys, db.meta],
     async () => {
       await Promise.all([
         db.transactions.clear(),
         db.categories.clear(),
         db.wallets.clear(),
         db.presets.clear(),
+        db.recurring.clear(),
         db.keys.clear(), // the data key must not outlive the session
         db.meta.clear(),
       ]);

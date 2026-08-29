@@ -2,6 +2,7 @@
 
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
+import { BucketBars } from "@/components/charts/bucket-bars";
 import { CalendarHeatmap } from "@/components/charts/calendar-heatmap";
 import { CategoryBars } from "@/components/charts/category-bars";
 import { TrendLines } from "@/components/charts/trend-lines";
@@ -14,6 +15,7 @@ import {
   monthBounds,
   monthlyTrend,
   shiftMonth,
+  spendByBucket,
   spendByCategory,
   summarize,
   type MonthKey,
@@ -91,6 +93,10 @@ export default function DashboardPage() {
           <Stat label="คงเหลือ" value={summary.net} signed />
         </div>
       </section>
+
+      <Panel title="แยกตามกลุ่ม — ทั้งเดือน">
+        <BucketBars totals={spendByBucket(rows, categories, monthBounds(month))} />
+      </Panel>
 
       {/* The calendar sits above the breakdown because it selects for it:
           picking a day should change something the eye is already heading toward,

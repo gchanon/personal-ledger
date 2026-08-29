@@ -7,6 +7,7 @@ import {
   setMeta,
   type LocalCategory,
   type LocalPreset,
+  type LocalRecurring,
   type LocalTransaction,
   type LocalWallet,
 } from "@/lib/db";
@@ -28,7 +29,7 @@ import { currentKey, fetchMode } from "@/lib/vault";
 
 const EPOCH = "1970-01-01T00:00:00Z";
 
-const TABLES = ["categories", "wallets", "transactions", "presets"] as const;
+const TABLES = ["categories", "wallets", "transactions", "presets", "recurring"] as const;
 
 /** Clock skew and commit-order slack. Re-reading a few rows is free; missing one isn't. */
 const CURSOR_REWIND_MS = 2000;
@@ -126,6 +127,7 @@ async function push(supabase: SupabaseClient, cipher: Cipher): Promise<number> {
   pushed += await pushTable(supabase, cipher, "wallets", db.wallets);
   pushed += await pushTable(supabase, cipher, "transactions", db.transactions);
   pushed += await pushTable(supabase, cipher, "presets", db.presets);
+  pushed += await pushTable(supabase, cipher, "recurring", db.recurring);
   return pushed;
 }
 
@@ -176,6 +178,7 @@ async function pull(supabase: SupabaseClient, cipher: Cipher): Promise<number> {
     db.transactions,
   );
   failed += await pullTable<LocalPreset>(supabase, cipher, "presets", db.presets);
+  failed += await pullTable<LocalRecurring>(supabase, cipher, "recurring", db.recurring);
   return failed;
 }
 
@@ -263,4 +266,5 @@ export async function markEverythingDirty(): Promise<void> {
   await db.wallets.toCollection().modify(flag);
   await db.transactions.toCollection().modify(flag);
   await db.presets.toCollection().modify(flag);
+  await db.recurring.toCollection().modify(flag);
 }

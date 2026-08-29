@@ -1,4 +1,5 @@
 import type { LocalCategory, LocalTransaction } from "@/lib/db";
+import type { Bucket } from "@/lib/types";
 
 /**
  * Aggregation runs over the rows already in IndexedDB, so every dashboard works
@@ -182,4 +183,36 @@ export function dailySpend(rows: LocalTransaction[], key: MonthKey): DayCell[] {
 /** Thai dictionary order. Plain string comparison sorts by code point instead. */
 export function byThaiName<T extends { name: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.name.localeCompare(b.name, "th"));
+}
+
+// ─── Buckets ─────────────────────────────────────────────────────────────────
+
+export type BucketTotal = { bucket: Bucket; total: number };
+
+/** Order is fixed so the bars don't reshuffle as amounts change month to month. */
+export const BUCKET_ORDER: Bucket[] = ["fixed", "investment", "variable"];
+
+export const BUCKET_LABEL: Record<Bucket, string> = {
+  fixed: "ค่าคงที่",
+  investment: "ลงทุนกับตัวเอง",
+  variable: "ผันแปร",
+};
+
+export function spendByBucket(
+  rows: LocalTransaction[],
+  categories: LocalCategory[],
+  range: Range,
+): BucketTotal[] {
+  const bucketOf = new Map(categories.map((c) => [c.id, c.bucket ?? "variable"]));
+  const totals = new Map<Bucket, number>(BUCKET_ORDER.map((b) => [b, 0]));
+
+  for (const row of rows) {
+    if (row.kind !== "expense" || !inRange(row, range)) continue;
+    // An uncategorised row has no bucket to belong to; variable is the honest
+    // default rather than inventing a commitment that was never declared.
+    const bucket = (row.category_id && bucketOf.get(row.category_id)) || "variable";
+    totals.set(bucket, (totals.get(bucket) ?? 0) + row.amount_minor);
+  }
+
+  return BUCKET_ORDER.map((bucket) => ({ bucket, total: totals.get(bucket) ?? 0 }));
 }

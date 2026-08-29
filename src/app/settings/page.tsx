@@ -2,8 +2,10 @@
 
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
+import { BucketPicker } from "@/components/bucket-picker";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { EncryptionSettings } from "@/components/encryption-settings";
+import { RecurringSettings } from "@/components/recurring-settings";
 import { byThaiName } from "@/lib/analytics";
 import {
   addCategory,
@@ -18,7 +20,8 @@ import {
 } from "@/lib/catalog";
 import { db, type LocalCategory, type LocalPreset } from "@/lib/db";
 import { formatBaht, parseToMinor } from "@/lib/money";
-import type { Kind } from "@/lib/types";
+import { BUCKET_LABEL } from "@/lib/analytics";
+import type { Bucket, Kind } from "@/lib/types";
 
 export default function SettingsPage() {
   const categories = useLiveQuery(
@@ -36,6 +39,7 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-10">
       <PresetSection presets={presets} categories={categories} wallets={wallets} />
+      <RecurringSettings categories={categories} wallets={wallets} />
       <CategorySection categories={categories} />
       <EncryptionSettings />
     </div>
@@ -284,11 +288,12 @@ function CategorySection({ categories }: { categories: LocalCategory[] }) {
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("📦");
   const [kind, setKind] = useState<Kind>("expense");
+  const [bucket, setBucket] = useState<Bucket>("variable");
   const [editingId, setEditingId] = useState<string | null>(null);
 
   async function create() {
     if (!name.trim()) return;
-    await addCategory({ name: name.trim(), kind, icon });
+    await addCategory({ name: name.trim(), kind, icon, bucket });
     setName("");
     setOpen(false);
   }
@@ -328,6 +333,7 @@ function CategorySection({ categories }: { categories: LocalCategory[] }) {
             placeholder="ชื่อหมวด"
             className={inputClass}
           />
+          {kind === "expense" && <BucketPicker value={bucket} onChange={setBucket} />}
           <EmojiPicker value={icon} onChange={setIcon} />
           <button type="button" onClick={create} className={primaryClass}>
             เพิ่มหมวดหมู่
@@ -353,7 +359,14 @@ function CategorySection({ categories }: { categories: LocalCategory[] }) {
                 ) : (
                   <li key={c.id} className="flex items-center gap-3 py-3">
                     <span className="text-xl">{c.icon}</span>
-                    <span className="flex-1 truncate">{c.name}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{c.name}</span>
+                      {c.kind === "expense" && (
+                        <span className="block truncate text-xs text-neutral-500">
+                          {BUCKET_LABEL[c.bucket ?? "variable"]}
+                        </span>
+                      )}
+                    </span>
                     <button
                       type="button"
                       onClick={() => setEditingId(c.id)}
@@ -391,10 +404,11 @@ function CategoryEditor({
 }) {
   const [name, setName] = useState(category.name);
   const [icon, setIcon] = useState(category.icon ?? "📦");
+  const [bucket, setBucket] = useState<Bucket>(category.bucket ?? "variable");
 
   async function save() {
     if (!name.trim()) return;
-    await editCategory(category.id, { name: name.trim(), icon });
+    await editCategory(category.id, { name: name.trim(), icon, bucket });
     onDone();
   }
 
@@ -406,6 +420,9 @@ function CategoryEditor({
         className={inputClass}
         autoFocus
       />
+      {category.kind === "expense" && (
+        <BucketPicker value={bucket} onChange={setBucket} />
+      )}
       <EmojiPicker value={icon} onChange={setIcon} />
       <div className="grid grid-cols-2 gap-3">
         <button type="button" onClick={onDone} className="rounded-xl border border-neutral-200 py-2.5 text-sm dark:border-neutral-800">

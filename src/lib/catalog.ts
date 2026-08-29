@@ -1,7 +1,13 @@
 import { uuidv7 } from "uuidv7";
-import { db, getMeta, type LocalCategory, type LocalPreset } from "@/lib/db";
+import {
+  db,
+  getMeta,
+  type LocalCategory,
+  type LocalPreset,
+  type LocalRecurring,
+} from "@/lib/db";
 import { sync } from "@/lib/sync";
-import type { Kind } from "@/lib/types";
+import type { Bucket, Kind } from "@/lib/types";
 
 /**
  * Categories and presets follow the same local-first rule as transactions:
@@ -22,6 +28,7 @@ export async function addCategory(input: {
   name: string;
   kind: Kind;
   icon: string;
+  bucket: Bucket;
 }): Promise<void> {
   await db.categories.add({
     id: uuidv7(),
@@ -29,6 +36,7 @@ export async function addCategory(input: {
     name: input.name,
     kind: input.kind,
     icon: input.icon,
+    bucket: input.bucket,
     updated_at: new Date().toISOString(),
     deleted_at: null,
     dirty: 1,
@@ -38,7 +46,7 @@ export async function addCategory(input: {
 
 export async function editCategory(
   id: string,
-  input: { name: string; icon: string },
+  input: { name: string; icon: string; bucket: Bucket },
 ): Promise<void> {
   await db.categories.update(id, {
     ...input,
@@ -113,17 +121,23 @@ export function livePresets(): Promise<LocalPreset[]> {
 
 // ─── First-run defaults ──────────────────────────────────────────────────────
 
-const DEFAULT_CATEGORIES: [string, Kind, string][] = [
-  ["อาหาร", "expense", "🍜"],
-  ["เดินทาง", "expense", "🚕"],
-  ["ช้อปปิ้ง", "expense", "🛍️"],
-  ["ที่พัก", "expense", "🏠"],
-  ["สุขภาพ", "expense", "💊"],
-  ["บันเทิง", "expense", "🎬"],
-  ["อื่นๆ", "expense", "📦"],
-  ["เงินเดือน", "income", "💰"],
-  ["ฟรีแลนซ์", "income", "💻"],
-  ["รายได้อื่น", "income", "🎁"],
+const DEFAULT_CATEGORIES: [string, Kind, string, Bucket][] = [
+  // Committed every month whether or not you use them.
+  ["ที่พัก", "expense", "🏠", "fixed"],
+  ["ค่าประกัน", "expense", "🛡️", "fixed"],
+  ["ค่าโทรศัพท์/เน็ต", "expense", "📱", "fixed"],
+  // Spending that is meant to come back later.
+  ["เรียนรู้/พัฒนาตัวเอง", "expense", "📚", "investment"],
+  // Moves with how the month goes.
+  ["อาหาร", "expense", "🍜", "variable"],
+  ["เดินทาง", "expense", "🚕", "variable"],
+  ["ช้อปปิ้ง", "expense", "🛍️", "variable"],
+  ["สุขภาพ", "expense", "💊", "variable"],
+  ["บันเทิง", "expense", "🎬", "variable"],
+  ["อื่นๆ", "expense", "📦", "variable"],
+  ["เงินเดือน", "income", "💰", "variable"],
+  ["ฟรีแลนซ์", "income", "💻", "variable"],
+  ["รายได้อื่น", "income", "🎁", "variable"],
 ];
 
 const DEFAULT_WALLETS: [string, string][] = [
@@ -141,12 +155,13 @@ export async function seedDefaults(): Promise<void> {
 
   if ((await db.categories.count()) === 0) {
     await db.categories.bulkAdd(
-      DEFAULT_CATEGORIES.map(([name, kind, icon]) => ({
+      DEFAULT_CATEGORIES.map(([name, kind, icon, bucket]) => ({
         id: uuidv7(),
         ledger_id: ledger,
         name,
         kind,
         icon,
+        bucket,
         updated_at: now,
         deleted_at: null,
         dirty: 1 as const,
@@ -169,4 +184,56 @@ export async function seedDefaults(): Promise<void> {
   }
 
   void sync();
+}
+
+// ─── Recurring ───────────────────────────────────────────────────────────────
+
+export type RecurringInput = {
+  label: string;
+  icon: string;
+  kind: Kind;
+  amount_minor: number;
+  category_id: string | null;
+  wallet_id: string | null;
+  note: string | null;
+  day_of_month: number;
+  start_month: string;
+};
+
+export async function addRecurring(input: RecurringInput): Promise<void> {
+  await db.recurring.add({
+    id: uuidv7(),
+    ledger_id: await ledgerId(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+    dirty: 1,
+    ...input,
+  });
+  void sync();
+}
+
+export async function editRecurring(
+  id: string,
+  input: RecurringInput,
+): Promise<void> {
+  await db.recurring.update(id, {
+    ...input,
+    updated_at: new Date().toISOString(),
+    dirty: 1,
+  });
+  void sync();
+}
+
+/**
+ * Tombstone only. Transactions this already produced stay put — they were real
+ * payments, and deleting the commitment shouldn't rewrite history.
+ */
+export async function removeRecurring(id: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.recurring.update(id, { deleted_at: now, updated_at: now, dirty: 1 });
+  void sync();
+}
+
+export function liveRecurring(): Promise<LocalRecurring[]> {
+  return db.recurring.filter((r) => r.deleted_at === null).toArray();
 }

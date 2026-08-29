@@ -1,5 +1,8 @@
 export type Kind = "expense" | "income";
 
+/** A classification above categories. NULL/absent behaves as "variable". */
+export type Bucket = "fixed" | "investment" | "variable";
+
 export type Category = {
   id: string;
   name: string;

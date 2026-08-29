@@ -18,6 +18,7 @@ export const ROUTING: Record<string, string[]> = {
   categories: ["id", "ledger_id", "updated_at", "deleted_at"],
   wallets: ["id", "ledger_id", "updated_at", "deleted_at"],
   presets: ["id", "ledger_id", "sort_order", "updated_at", "deleted_at"],
+  recurring: ["id", "ledger_id", "updated_at", "deleted_at"],
 };
 
 /**
@@ -35,7 +36,7 @@ export const LEGACY_COLUMNS: Record<string, string[]> = {
     "category_id",
     "note",
   ],
-  categories: ["name", "kind", "icon"],
+  categories: ["name", "kind", "icon", "bucket"],
   wallets: ["name", "kind"],
   presets: [
     "label",
@@ -45,6 +46,17 @@ export const LEGACY_COLUMNS: Record<string, string[]> = {
     "category_id",
     "wallet_id",
     "note",
+  ],
+  recurring: [
+    "label",
+    "icon",
+    "kind",
+    "amount_minor",
+    "category_id",
+    "wallet_id",
+    "note",
+    "day_of_month",
+    "start_month",
   ],
 };
 
