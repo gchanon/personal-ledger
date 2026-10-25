@@ -1,6 +1,7 @@
 "use client";
 
 import { useLiveQuery } from "dexie-react-hooks";
+import Link from "next/link";
 import { useState } from "react";
 import { BucketBars } from "@/components/charts/bucket-bars";
 import { CalendarHeatmap } from "@/components/charts/calendar-heatmap";
@@ -125,6 +126,14 @@ export default function DashboardPage() {
           )}
         </div>
         <CategoryBars slices={spendByCategory(rows, categories, scope)} />
+        {/* The chart keeps a ranked top few; everything below the fold lives
+            one tap away rather than stretching the page. */}
+        <Link
+          href={`/dashboard/categories?month=${month}${selectedDay ? `&day=${selectedDay}` : ""}`}
+          className="text-sm text-neutral-500 underline"
+        >
+          ดูทุกหมวด &rsaquo;
+        </Link>
       </section>
 
       <Panel title={`แนวโน้ม ${TREND_MONTHS} เดือน`}>
