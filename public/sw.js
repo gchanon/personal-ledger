@@ -1,7 +1,7 @@
 // Minimal offline shell. Hand-rolled rather than pulled from a plugin: the whole
-// job is five routes and the build's static chunks.
+// job is six routes and the build's static chunks.
 
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = `shell-${VERSION}`;
 const ASSETS = `assets-${VERSION}`;
 
@@ -10,6 +10,7 @@ const SHELL_ROUTES = [
   "/transactions",
   "/transactions/edit",
   "/dashboard",
+  "/budget",
   "/settings",
 ];
 

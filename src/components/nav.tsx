@@ -7,6 +7,7 @@ const TABS = [
   { href: "/", label: "จด" },
   { href: "/transactions", label: "รายการ" },
   { href: "/dashboard", label: "สรุป" },
+  { href: "/budget", label: "งบ" },
   { href: "/settings", label: "ตั้งค่า" },
 ];
 
@@ -15,7 +16,7 @@ export function Nav() {
   if (pathname.startsWith("/login")) return null;
 
   return (
-    <nav className="mb-5 grid grid-cols-4 gap-1 rounded-xl bg-neutral-100 p-1 text-sm dark:bg-neutral-800">
+    <nav className="mb-5 grid grid-cols-5 gap-1 rounded-xl bg-neutral-100 p-1 text-sm dark:bg-neutral-800">
       {TABS.map((tab) => {
         const active =
           tab.href === "/" ? pathname === "/" : pathname.startsWith(tab.href);
