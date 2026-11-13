@@ -17,7 +17,13 @@ import type { Kind } from "@/lib/types";
 type Props = {
   /** Absent = create mode. Present = edit mode. */
   transaction?: LocalTransaction;
-  prefill?: { amount?: string; note?: string; kind?: Kind; category?: string };
+  prefill?: {
+    amount?: string;
+    note?: string;
+    kind?: Kind;
+    category?: string;
+    occurredAt?: Date;
+  };
 };
 
 export function TransactionForm({ transaction, prefill = {} }: Props) {
@@ -183,7 +189,9 @@ export function TransactionForm({ transaction, prefill = {} }: Props) {
         <input
           type="datetime-local"
           name="occurred_at"
-          defaultValue={toLocalInput(transaction?.occurred_at)}
+          defaultValue={toLocalInput(
+            transaction?.occurred_at ?? prefill.occurredAt?.toISOString(),
+          )}
           className="rounded-xl border border-neutral-200 px-3 py-3 dark:border-neutral-800 dark:bg-neutral-900"
         />
       </div>

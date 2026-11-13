@@ -1,7 +1,7 @@
 // Minimal offline shell. Hand-rolled rather than pulled from a plugin: the whole
 // job is seven routes and the build's static chunks.
 
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = `shell-${VERSION}`;
 const ASSETS = `assets-${VERSION}`;
 
@@ -13,6 +13,7 @@ const SHELL_ROUTES = [
   "/budget",
   "/dashboard/categories",
   "/settings",
+  "/import",
 ];
 
 self.addEventListener("install", (event) => {

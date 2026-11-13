@@ -17,14 +17,20 @@ export type TransactionInput = {
   note: string | null;
 };
 
-/** Returns the new row's id so a one-tap caller can offer undo. */
-export async function addTransaction(input: TransactionInput): Promise<string> {
+/**
+ * Returns the new row's id so a one-tap caller can offer undo. Pass `id` only
+ * for a derived (dedupe) id; otherwise it is time-ordered so offline rows still
+ * sort correctly on arrival.
+ */
+export async function addTransaction(
+  input: TransactionInput,
+  id: string = uuidv7(),
+): Promise<string> {
   const ledgerId = await getMeta("ledger_id");
   if (!ledgerId) {
     throw new Error("ยังไม่ได้ซิงก์ครั้งแรก — ต่ออินเทอร์เน็ตแล้วเปิดแอพอีกครั้ง");
   }
 
-  const id = uuidv7(); // time-ordered, so offline rows still sort correctly on arrival
   await db.transactions.add({
     id,
     ledger_id: ledgerId,

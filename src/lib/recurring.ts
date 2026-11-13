@@ -1,5 +1,6 @@
 import { shiftMonth, toMonthKey, type MonthKey } from "@/lib/analytics";
 import { db, getMeta, type LocalRecurring } from "@/lib/db";
+import { derivedId } from "@/lib/ids";
 import { sync } from "@/lib/sync";
 
 /**
@@ -23,25 +24,7 @@ export async function occurrenceId(
   recurringId: string,
   month: MonthKey,
 ): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`recurring:${recurringId}:${month}`),
-  );
-  const bytes = new Uint8Array(digest).slice(0, 16);
-
-  // Stamp version 8 (custom) and the RFC 4122 variant so Postgres accepts it
-  // as a uuid rather than rejecting 16 arbitrary bytes.
-  bytes[6] = (bytes[6] & 0x0f) | 0x80;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20),
-  ].join("-");
+  return derivedId(`recurring:${recurringId}:${month}`);
 }
 
 /** Clamps to the last day of shorter months, so "the 31st" still works in April. */
